@@ -1,0 +1,9 @@
+Document: python-os-cloud-config-doc
+Title: OS Cloud Config Documentation
+Author: OpenStack
+Abstract: Sphinx documentation for python-os-cloud-config
+Section: Programming/Python
+
+Format: HTML
+Index: /usr/share/doc/python-os-cloud-config/html/index.html
+Files: /usr/share/doc/python-os-cloud-config/html/*

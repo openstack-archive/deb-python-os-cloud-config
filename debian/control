@@ -1,0 +1,53 @@
+Source: python-os-cloud-config
+Section: python
+Priority: optional
+Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
+Uploaders: Julien Danjou <acid@debian.org>,
+           Thomas Goirand <zigo@debian.org>,
+           Mehdi Abaakouk <sileht@sileht.net>
+Build-Depends: debhelper (>= 9),
+               openstack-pkg-tools,
+               python-all (>= 2.6.6-3~),
+               python-pbr (>= 0.6),
+               python-setuptools
+Build-Depends-Indep: python-babel (>= 1.3),
+                     python-fixtures (>= 0.3.14),
+                     python-iso8601 (>= 0.1.9),
+                     python-keystoneclient (>= 1:0.6.0),
+                     python-mock (>= 1.0),
+                     python-oslo.config (>= 1.1.0),
+                     python-oslosphinx,
+                     python-six (>= 1.5.2),
+                     python-sphinx,
+                     python-subunit (>= 0.0.18),
+                     python-testscenarios (>= 0.4),
+                     python-testtools (>= 0.9.34),
+                     subunit (>= 0.0.18),
+                     testrepository (>= 0.0.18)
+Standards-Version: 3.9.5
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-os-cloud-config.git
+Vcs-Git: git://anonscm.debian.org/openstack/python-os-cloud-config.git
+Homepage: http://github.com/openstack/os-cloud-config
+
+Package: python-os-cloud-config
+Architecture: all
+Pre-Depends: dpkg (>= 1.15.6~)
+Depends: python-babel (>= 1.3),
+         python-iso8601 (>= 0.1.9),
+         python-keystoneclient (>= 1:0.6.0),
+         python-oslo.config (>= 1.2.0),
+         python-pbr (>= 0.6),
+         python-six (>= 1.5.2),
+         ${misc:Depends},
+         ${python:Depends},
+         ${sphinxdoc:Depends}
+Recommends: ${python:Recommends}
+Description: configuration seed and initialisation for TripleO OpenStack clouds
+ This package is part of the TripleO project. TripleO is a program aimed at
+ installing, upgrading and operating OpenStack clouds using OpenStack's own
+ cloud facilities as the foundations - building on nova, neutron and heat to
+ automate fleet management at datacentre scale (and scaling down to as few as
+ 2 machines).
+ .
+ This package contains the common code for tuskar and the seed initialisation
+ logic, the post heat completion initial configuration of a cloud.
