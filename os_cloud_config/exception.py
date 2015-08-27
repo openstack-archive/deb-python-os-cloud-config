@@ -14,7 +14,7 @@
 
 import logging
 
-from os_cloud_config.openstack.common.gettextutils import _
+from os_cloud_config._i18n import _
 
 
 LOG = logging.getLogger(__name__)
@@ -48,3 +48,7 @@ class CloudConfigException(Exception):
                 message = self.msg_fmt
 
         super(CloudConfigException, self).__init__(message)
+
+
+class MissingEnvironment(CloudConfigException):
+    message = "Required environment variables are not set."

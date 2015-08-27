@@ -13,9 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+
 import argparse
 import textwrap
 
+from os_cloud_config.cmd.utils import environment
 from os_cloud_config.keystone import initialize
 
 
@@ -23,10 +26,13 @@ def parse_args():
     description = textwrap.dedent("""
     Perform initial setup of keystone for a new cloud.
 
-    This will create the admin and service tenants, the admin and Member
-    roles, the admin user, configure certificates and finally register the
-    initial identity endpoint, after which Keystone may be used with normal
-    authentication.
+    This will create the admin and service tenants, the admin role, the admin
+    user, configure certificates and finally register the initial identity
+    endpoint, after which Keystone may be used with normal authentication.
+
+    This command will wait for a user-specified amount of time for a Keystone
+    service to be running on the specified host.  The default is a 10 minute
+    wait time with 10 seconds between poll attempts.
     """)
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -44,15 +50,39 @@ def parse_args():
                         required=True)
     parser.add_argument('-r', '--region', dest='region', default='regionOne',
                         help="region to create the endpoint in")
-    parser.add_argument('-s', '--ssl', dest='ssl',
-                        help="ip/hostname to use as the ssl endpoint, if "
-                        "required")
-    parser.add_argument('-u', '--user', dest='user', required=True,
-                        help="user to connect to the Keystone node via ssh")
+    endpoint_group = parser.add_mutually_exclusive_group()
+    endpoint_group.add_argument('-s', '--ssl', dest='ssl',
+                                help="ip/hostname to use as the ssl "
+                                "endpoint, if required")
+    endpoint_group.add_argument('--public', dest='public',
+                                help="ip/hostname to use as the public "
+                                "endpoint, if the default is not suitable")
+    parser.add_argument('-u', '--user', dest='user',
+                        help="user to connect to the Keystone node via ssh, "
+                        "required with --pki-setup")
+    parser.add_argument('--timeout', dest='timeout', default=600, type=int,
+                        help="Total seconds to wait for keystone to be ready")
+    parser.add_argument('--poll-interval', dest='pollinterval',
+                        default=10, type=int,
+                        help="Seconds to wait between keystone checks")
+    pki_group = parser.add_mutually_exclusive_group()
+    pki_group.add_argument('--pki-setup', dest='pkisetup',
+                           action='store_true',
+                           help="Perform PKI setup (DEPRECATED)", default=True)
+    pki_group.add_argument('--no-pki-setup', dest='pkisetup',
+                           action='store_false',
+                           help="Do not perform PKI setup")
+    environment._add_logging_arguments(parser)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    environment._configure_logging(args)
+
+    if args.pkisetup and not args.user:
+        print("User is required if PKI setup will be performed.")
+        return 1
     initialize(args.host, args.admin_token, args.admin_email,
-               args.admin_password, args.region, args.ssl, args.user)
+               args.admin_password, args.region, args.ssl, args.public,
+               args.user, args.timeout, args.pollinterval, args.pkisetup)

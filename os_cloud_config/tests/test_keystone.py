@@ -12,6 +12,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from keystoneclient.openstack.common.apiclient import exceptions
+import keystoneclient.v2_0.client as ksclient_v2
 import mock
 
 from os_cloud_config import keystone
@@ -30,30 +32,31 @@ class KeystoneTest(base.TestCase):
             public_endpoint, 'http://%s:35357/v2.0' % host,
             'http://192.0.0.3:5000/v2.0')
 
+    def assert_calls_in_grant_admin_user_roles(self):
+        self.client_v3.roles.list.assert_has_calls([mock.call(name='admin')])
+        self.client_v3.domains.list.assert_called_once_with(id='default')
+        self.client_v3.users.list.assert_called_once_with(
+            domain=self.client_v3.domains.list.return_value[0], name='admin')
+        self.client_v3.projects.list.assert_called_once_with(
+            domain=self.client_v3.domains.list.return_value[0], name='admin')
+
     @mock.patch('subprocess.check_call')
     def test_initialize(self, check_call_mock):
         self._patch_client()
+        self._patch_client_v3()
+
+        self.client.services.findall.return_value = []
+        self.client.endpoints.findall.return_value = []
+        self.client.roles.findall.return_value = []
+        self.client.tenants.findall.return_value = []
 
         keystone.initialize(
             '192.0.0.3', 'mytoken', 'admin@example.org', 'adminpasswd')
 
-        self.client.roles.create.assert_has_calls(
-            [mock.call('admin'), mock.call('Member')])
-
         self.client.tenants.create.assert_has_calls(
             [mock.call('admin', None), mock.call('service', None)])
 
-        self.client.tenants.find.assert_called_once_with(name='admin')
-        self.client.roles.find.assert_called_once_with(name='admin')
-        self.client.users.create.assert_called_once_with(
-            'admin', email='admin@example.org', password='adminpasswd',
-            tenant_id=self.client.tenants.find.return_value.id)
-
-        self.client.roles.find.assert_called_once_with(name='admin')
-        self.client.roles.add_user_role.assert_called_once_with(
-            self.client.users.create.return_value,
-            self.client.roles.find.return_value,
-            self.client.tenants.find.return_value)
+        self.assert_calls_in_grant_admin_user_roles()
 
         self.assert_endpoint('192.0.0.3')
 
@@ -74,49 +77,253 @@ class KeystoneTest(base.TestCase):
             [mock.call('swiftoperator'), mock.call('ResellerAdmin')])
 
     def test_initialize_for_heat(self):
-        self._patch_client()
+        client = mock.MagicMock()
+        client.domains.find.side_effect = exceptions.NotFound
+        client.users.find.side_effect = exceptions.NotFound
 
-        keystone.initialize_for_heat('192.0.0.3', 'mytoken', 'heatadminpasswd')
+        keystone.initialize_for_heat(client, 'heatadminpasswd')
 
-        self.client.domains.create.assert_called_once_with(
+        client.domains.create.assert_called_once_with(
             'heat', description='Owns users and tenants created by heat')
-        self.client.users.create.assert_called_once_with(
+        client.users.create.assert_called_once_with(
             'heat_domain_admin',
             description='Manages users and tenants created by heat',
-            domain=self.client.domains.create.return_value,
+            domain=client.domains.create.return_value,
             password='heatadminpasswd')
-        self.client.roles.find.assert_called_once_with(name='admin')
-        self.client.roles.grant.assert_called_once_with(
-            self.client.roles.find.return_value,
-            user=self.client.users.create.return_value,
-            domain=self.client.domains.create.return_value)
+        client.roles.find.assert_called_once_with(name='admin')
+        client.roles.grant.assert_called_once_with(
+            client.roles.find.return_value,
+            user=client.users.create.return_value,
+            domain=client.domains.create.return_value)
 
-    def test_create_endpoint_ssl(self):
+    @mock.patch('subprocess.check_call')
+    def test_idempotent_initialize(self, check_call_mock):
+        self._patch_client()
+        self._patch_client_v3()
+
+        self.client.services.findall.return_value = mock.MagicMock()
+        self.client.endpoints.findall.return_value = mock.MagicMock()
+        self.client.roles.findall.return_value = mock.MagicMock()
+        self.client.tenants.findall.return_value = mock.MagicMock()
+
+        keystone.initialize(
+            '192.0.0.3',
+            'mytoken',
+            'admin@example.org',
+            'adminpasswd')
+
+        self.assertFalse(self.client.roles.create('admin').called)
+        self.assertFalse(self.client.roles.create('service').called)
+
+        self.assertFalse(self.client.tenants.create('admin', None).called)
+        self.assertFalse(self.client.tenants.create('service', None).called)
+
+        self.assert_calls_in_grant_admin_user_roles()
+
+        check_call_mock.assert_called_once_with(
+            ["ssh", "-o" "StrictHostKeyChecking=no", "-t", "-l", "root",
+             "192.0.0.3", "sudo", "keystone-manage", "pki_setup",
+             "--keystone-user",
+             "$(getent passwd | grep '^keystone' | cut -d: -f1)",
+             "--keystone-group",
+             "$(getent group | grep '^keystone' | cut -d: -f1)"])
+
+    def test_setup_roles(self):
         self._patch_client()
 
-        keystone._create_endpoint(self.client, '192.0.0.3', 'regionOne',
-                                  'keystone.example.com')
+        self.client.roles.findall.return_value = []
+
+        keystone._setup_roles(self.client)
+
+        self.client.roles.findall.assert_has_calls(
+            [mock.call(name='swiftoperator'), mock.call(name='ResellerAdmin'),
+             mock.call(name='heat_stack_user')])
+
+        self.client.roles.create.assert_has_calls(
+            [mock.call('swiftoperator'), mock.call('ResellerAdmin'),
+             mock.call('heat_stack_user')])
+
+    def test_idempotent_setup_roles(self):
+        self._patch_client()
+
+        self.client.roles.findall.return_value = mock.MagicMock()
+
+        keystone._setup_roles(self.client)
+
+        self.client.roles.findall.assert_has_calls(
+            [mock.call(name='swiftoperator'), mock.call(name='ResellerAdmin'),
+             mock.call(name='heat_stack_user')], any_order=True)
+
+        self.assertFalse(self.client.roles.create('swiftoperator').called)
+        self.assertFalse(self.client.roles.create('ResellerAdmin').called)
+        self.assertFalse(self.client.roles.create('heat_stack_user').called)
+
+    def test_create_tenants(self):
+        self._patch_client()
+
+        self.client.tenants.findall.return_value = []
+
+        keystone._create_tenants(self.client)
+
+        self.client.tenants.findall.assert_has_calls(
+            [mock.call(name='admin'), mock.call(name='service')],
+            any_order=True)
+
+        self.client.tenants.create.assert_has_calls(
+            [mock.call('admin', None), mock.call('service', None)])
+
+    def test_idempotent_create_tenants(self):
+        self._patch_client()
+
+        self.client.tenants.findall.return_value = mock.MagicMock()
+
+        keystone._create_tenants(self.client)
+
+        self.client.tenants.findall.assert_has_calls(
+            [mock.call(name='admin'), mock.call(name='service')],
+            any_order=True)
+
+        # Test that tenants are not created again if they exists
+        self.assertFalse(self.client.tenants.create('admin', None).called)
+        self.assertFalse(self.client.tenants.create('service', None).called)
+
+    def test_create_keystone_endpoint_ssl(self):
+        self._patch_client()
+
+        self.client.services.findall.return_value = []
+        self.client.endpoints.findall.return_value = []
+
+        keystone._create_keystone_endpoint(
+            self.client, '192.0.0.3', 'regionOne', 'keystone.example.com',
+            None)
         public_endpoint = 'https://keystone.example.com:13000/v2.0'
         self.assert_endpoint('192.0.0.3', public_endpoint=public_endpoint)
 
-    def test_create_endpoint_region(self):
+    def test_create_keystone_endpoint_public(self):
         self._patch_client()
 
-        keystone._create_endpoint(self.client, '192.0.0.3', 'regionTwo', None)
+        self.client.services.findall.return_value = []
+        self.client.endpoints.findall.return_value = []
+
+        keystone._create_keystone_endpoint(
+            self.client, '192.0.0.3', 'regionOne', None, 'keystone.internal')
+        public_endpoint = 'http://keystone.internal:5000/v2.0'
+        self.assert_endpoint('192.0.0.3', public_endpoint=public_endpoint)
+
+    def test_create_keystone_endpoint_ssl_and_public(self):
+        self._patch_client()
+
+        self.client.services.findall.return_value = []
+        self.client.endpoints.findall.return_value = []
+
+        keystone._create_keystone_endpoint(
+            self.client, '192.0.0.3', 'regionOne', 'keystone.example.com',
+            'keystone.internal')
+        public_endpoint = 'https://keystone.example.com:13000/v2.0'
+        self.assert_endpoint('192.0.0.3', public_endpoint=public_endpoint)
+
+    def test_create_keystone_endpoint_region(self):
+        self._patch_client()
+
+        self.client.services.findall.return_value = []
+        self.client.endpoints.findall.return_value = []
+
+        keystone._create_keystone_endpoint(
+            self.client, '192.0.0.3', 'regionTwo', None, None)
         self.assert_endpoint('192.0.0.3', region='regionTwo')
 
-    @mock.patch('os_cloud_config.keystone.ksclient.Client')
-    def test_create_admin_client(self, client):
+    @mock.patch('time.sleep')
+    def test_create_roles_retry(self, sleep):
+        self._patch_client()
+        side_effect = (exceptions.ConnectionRefused,
+                       exceptions.ServiceUnavailable, mock.DEFAULT,
+                       mock.DEFAULT)
+        self.client.roles.create.side_effect = side_effect
+        self.client.roles.findall.return_value = []
+
+        keystone._create_roles(self.client)
+        sleep.assert_has_calls([mock.call(10), mock.call(10)])
+
+    def test_setup_endpoints(self):
+        self.client = mock.MagicMock()
+        self.client.users.find.side_effect = ksclient_v2.exceptions.NotFound()
+        self.client.services.findall.return_value = []
+        self.client.endpoints.findall.return_value = []
+
+        keystone.setup_endpoints(
+            {'nova': {'password': 'pass', 'type': 'compute',
+                      'ssl_port': 1234}},
+            public_host='192.0.0.4', region='region', client=self.client,
+            os_auth_url='https://192.0.0.3')
+
+        self.client.users.find.assert_called_once_with(name='nova')
+        self.client.tenants.find.assert_called_once_with(name='service')
+        self.client.roles.find.assert_called_once_with(name='admin')
+        self.client.services.findall.assert_called_once_with(type='compute')
+        self.client.endpoints.findall.assert_called_once_with(
+            publicurl='https://192.0.0.4:1234/v2/$(tenant_id)s')
+
+        self.client.users.create.assert_called_once_with(
+            'nova', 'pass',
+            tenant_id=self.client.tenants.find.return_value.id,
+            email='email=nobody@example.com')
+
+        self.client.roles.add_user_role.assert_called_once_with(
+            self.client.users.create.return_value,
+            self.client.roles.find.return_value,
+            self.client.tenants.find.return_value)
+
+        self.client.services.create.assert_called_once_with(
+            'nova', 'compute', description='Nova Compute Service')
+        self.client.endpoints.create.assert_called_once_with(
+            'region',
+            self.client.services.create.return_value.id,
+            'https://192.0.0.4:1234/v2/$(tenant_id)s',
+            'http://192.0.0.3:8774/v2/$(tenant_id)s',
+            'http://192.0.0.3:8774/v2/$(tenant_id)s')
+
+    def test_idempotent_register_endpoint(self):
+        self.client = mock.MagicMock()
+
+        # Explicitly defining that endpoint has been already created
+        self.client.users.find.return_value = mock.MagicMock()
+        self.client.services.findall.return_value = mock.MagicMock()
+        self.client.endpoints.findall.return_value = mock.MagicMock()
+
+        keystone._register_endpoint(
+            self.client,
+            'nova',
+            {'password': 'pass', 'type': 'compute',
+             'ssl_port': 1234, 'public_host': '192.0.0.4',
+             'internal_host': '192.0.0.3'},
+            region=None)
+
+        # Calling just a subset of find APIs
+        self.client.users.find.assert_called_once_with(name='nova')
+        self.assertFalse(self.client.tenants.find.called)
+        self.assertFalse(self.client.roles.find.called)
+        self.client.services.findall.assert_called_once_with(type='compute')
+        self.client.endpoints.findall.assert_called_once_with(
+            publicurl='https://192.0.0.4:1234/')
+
+        # None of creating API calls has been called
+        self.assertFalse(self.client.users.create.called)
+        self.assertFalse(self.client.roles.add_user_role.called)
+        self.assertFalse(self.client.services.create.called)
+        self.assertFalse(self.client.endpoints.create.called)
+
+    @mock.patch('os_cloud_config.keystone.ksclient_v2.Client')
+    def test_create_admin_client_v2(self, client):
         self.assertEqual(
             client.return_value,
-            keystone._create_admin_client('192.0.0.3', 'mytoken'))
+            keystone._create_admin_client_v2('192.0.0.3', 'mytoken'))
         client.assert_called_once_with(endpoint='http://192.0.0.3:35357/v2.0',
                                        token='mytoken')
 
     def _patch_client(self):
         self.client = mock.MagicMock()
         self.create_admin_client_patcher = mock.patch(
-            'os_cloud_config.keystone._create_admin_client')
+            'os_cloud_config.keystone._create_admin_client_v2')
         create_admin_client = self.create_admin_client_patcher.start()
         self.addCleanup(self._patch_client_cleanup)
         create_admin_client.return_value = self.client
@@ -124,3 +331,65 @@ class KeystoneTest(base.TestCase):
     def _patch_client_cleanup(self):
         self.create_admin_client_patcher.stop()
         self.client = None
+
+    @mock.patch('os_cloud_config.keystone.ksclient_v3.Client')
+    def test_create_admin_client_v3(self, client_v3):
+        self.assertEqual(
+            client_v3.return_value,
+            keystone._create_admin_client_v3('192.0.0.3', 'mytoken'))
+        client_v3.assert_called_once_with(endpoint='http://192.0.0.3:35357/v3',
+                                          token='mytoken')
+
+    def _patch_client_v3(self):
+        self.client_v3 = mock.MagicMock()
+        self.create_admin_client_patcher_v3 = mock.patch(
+            'os_cloud_config.keystone._create_admin_client_v3')
+        create_admin_client_v3 = self.create_admin_client_patcher_v3.start()
+        self.addCleanup(self._patch_client_cleanup_v3)
+        create_admin_client_v3.return_value = self.client_v3
+
+    def _patch_client_cleanup_v3(self):
+        self.create_admin_client_patcher_v3.stop()
+        self.client_v3 = None
+
+    def test_create_admin_user_user_exists(self):
+        self._patch_client()
+        keystone._create_admin_user(self.client, 'admin@example.org',
+                                    'adminpasswd')
+        self.client.tenants.find.assert_called_once_with(name='admin')
+        self.client.users.create.assert_not_called()
+
+    def test_create_admin_user_user_does_not_exist(self):
+        self._patch_client()
+        self.client.users.find.side_effect = exceptions.NotFound()
+        keystone._create_admin_user(self.client, 'admin@example.org',
+                                    'adminpasswd')
+        self.client.tenants.find.assert_called_once_with(name='admin')
+        self.client.users.create.assert_called_once_with(
+            'admin', email='admin@example.org', password='adminpasswd',
+            tenant_id=self.client.tenants.find.return_value.id)
+
+    def test_grant_admin_user_roles_idempotent(self):
+        self._patch_client_v3()
+        keystone._grant_admin_user_roles(self.client_v3)
+        self.assert_calls_in_grant_admin_user_roles()
+        self.client_v3.roles.grant.assert_not_called()
+
+    def list_roles_side_effect(self, *args, **kwargs):
+        if kwargs.get('name') == 'admin':
+            return [self.client_v3.roles.list.return_value[0]]
+        else:
+            return []
+
+    def test_grant_admin_user_roles(self):
+        self._patch_client_v3()
+        self.client_v3.roles.list.side_effect = self.list_roles_side_effect
+        keystone._grant_admin_user_roles(self.client_v3)
+        self.assert_calls_in_grant_admin_user_roles()
+        self.client_v3.roles.grant.assert_has_calls([
+            mock.call(self.client_v3.roles.list.return_value[0],
+                      user=self.client_v3.users.list.return_value[0],
+                      project=self.client_v3.projects.list.return_value[0]),
+            mock.call(self.client_v3.roles.list.return_value[0],
+                      user=self.client_v3.users.list.return_value[0],
+                      domain=self.client_v3.domains.list.return_value[0])])
