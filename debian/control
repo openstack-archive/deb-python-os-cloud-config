@@ -31,7 +31,7 @@ Build-Depends-Indep: python-babel,
 Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-os-cloud-config.git
 Vcs-Git: git://anonscm.debian.org/openstack/python-os-cloud-config.git
-Homepage: http://github.com/openstack/os-cloud-config
+Homepage: https://github.com/openstack/os-cloud-config
 
 Package: python-os-cloud-config
 Architecture: all
