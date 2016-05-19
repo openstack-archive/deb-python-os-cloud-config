@@ -1,6 +1,6 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: os-cloud-config
-Source: http://github.com/openstack/os-cloud-config
+Source: https://github.com/openstack/os-cloud-config
 
 Files: debian/*
 Copyright: (c) 2014, Thomas Goirand <zigo@debian.org>
