@@ -1,0 +1,9 @@
+Code-Review+2: Ben Nemec <openstack@nemebean.com>
+Code-Review+2: Giulio Fidente <gfidente@redhat.com>
+Workflow+1: Giulio Fidente <gfidente@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 17 Jun 2015 17:36:31 +0000
+Reviewed-on: https://review.openstack.org/192748
+Project: openstack/deb-python-os-cloud-config
+Branch: refs/heads/master

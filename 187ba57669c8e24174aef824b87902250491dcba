@@ -1,0 +1,9 @@
+Code-Review+2: Ben Nemec <openstack@nemebean.com>
+Code-Review+2: James Slagle <jslagle@redhat.com>
+Workflow+1: James Slagle <jslagle@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 06 Jul 2015 20:25:07 +0000
+Reviewed-on: https://review.openstack.org/195048
+Project: openstack/deb-python-os-cloud-config
+Branch: refs/heads/master

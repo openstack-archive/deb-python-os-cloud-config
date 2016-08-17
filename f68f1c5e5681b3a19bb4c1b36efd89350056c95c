@@ -1,0 +1,9 @@
+Code-Review+2: Jay Dobies <jason.dobies@redhat.com>
+Code-Review+2: Giulio Fidente <gfidente@redhat.com>
+Workflow+1: Giulio Fidente <gfidente@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 05 Aug 2015 14:35:48 +0000
+Reviewed-on: https://review.openstack.org/203217
+Project: openstack/deb-python-os-cloud-config
+Branch: refs/heads/master

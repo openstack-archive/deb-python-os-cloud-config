@@ -1,0 +1,10 @@
+Code-Review+2: Steve Kowalik <steven@wedontsleep.org>
+Code-Review+1: Naohiro Tamura <naohirot.openstack@gmail.com>
+Code-Review+2: Ben Nemec <openstack@nemebean.com>
+Workflow+1: Ben Nemec <openstack@nemebean.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 02 Dec 2015 19:41:45 +0000
+Reviewed-on: https://review.openstack.org/245430
+Project: openstack/deb-python-os-cloud-config
+Branch: refs/heads/master
